@@ -1,9 +1,9 @@
 const mysql = require('mysql')
 const connection = mysql.createConnection({
-    host: "localhost",
-    user: "root",
-    password:"",
-    database: "liveconfluxv2"
+    host: "confluxhr.cwsjkiciisk1.us-east-2.rds.amazonaws.com",
+    user: "adminconfluxhr",
+    password:"Hr2025#$confluxhr",
+    database: "CL_hrms"
 })
 connection.connect((err)=>{
 if(err){
