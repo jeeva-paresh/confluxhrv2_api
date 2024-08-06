@@ -16,6 +16,7 @@ app.post('/create_quarter_task', async (req, res) => {
     res.status(200).json({ success: false, message: 'Sorry ! No Goal Data Found.', alert_type: 'error' });
   } else {
     try {
+      const insertedDetails = [];
       for (const goal of goals) {
         const { goal_title, kpi_data } = goal;
 
@@ -83,6 +84,21 @@ app.post('/create_quarter_task', async (req, res) => {
                 return res.status(500).send('Error inserting KPI target details.');
               }
             }
+
+            // Retrieve the inserted kpi details
+            let kpiDetailResult = await new Promise((resolve, reject) => {
+              connection.query(
+                'SELECT id,company_id,staffid,emp_code,goal_id,financial_year,goal_task,uom,total_target FROM hrms_prm_task_title_details WHERE id = ?',
+                [kpi_id],
+                (err, result) => {
+                  if (err) return reject(err);
+                  resolve(result);
+                }
+              );
+            });
+
+            insertedDetails.push(...kpiDetailResult);
+
           } catch (queryError) {
             console.error('Error during task details insertion:', queryError);
             return res.status(500).send('Error inserting task details.');
@@ -90,7 +106,7 @@ app.post('/create_quarter_task', async (req, res) => {
         }
       }
 
-      res.status(200).json({ success: true, message: 'Goals and KPI targets added successfully.', alert_type: 'success' });
+      res.status(200).json({ success: true, message: 'Goals and KPI targets added successfully.', alert_type: 'success', insertedDetails: insertedDetails });
     } catch (error) {
       console.error('Unexpected error:', error);
       res.status(500).send('Unexpected error.');
@@ -128,7 +144,6 @@ app.get('/get_quarterly_month_data', (req, resp) => {
     }
   });
 });
-
 
 
 // GET Goal and KPI Details
@@ -318,7 +333,7 @@ app.get('/fetch_kpi_data_byId', (req, res) => {
 
   const ids = [kpiId, nextKpiId, thirdKpiId].filter(id => id !== null);
 
-  const query = 'SELECT id, achieved, target FROM hrms_prm_kpi_target_achievement WHERE id IN (?)';
+  let query = 'SELECT id, achieved, target FROM hrms_prm_kpi_target_achievement WHERE id IN (?)';
 
   connection.query(query, [ids], (err, results) => {
     if (err) {
@@ -380,6 +395,87 @@ app.put('/update_kpi_comment_achieved', (req, res) => {
 
     res.status(200).json({ success: true, message: 'Comment updated successfully', alert_type: 'success' });
   });
+});
+
+
+// PUT route to Set New Traget when Target becomes 0
+app.put('/update_new_target', (req, res) => {
+  const kpi_detailsid = req.query.kpi_detailsid;
+  const { target } = req.body;
+
+  if (!kpi_detailsid || !target) {
+    return res.status(400).json({ error: 'Missing New Target' });
+  }
+
+  let updateNewTargetQuery = `
+    UPDATE hrms_prm_kpi_target_achievement
+    SET target = ?
+    WHERE id = ?
+  `;
+
+  connection.query(updateNewTargetQuery, [target, kpi_detailsid], (err, results) => {
+    if (err) {
+      console.error('Error updating New Trget:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (results.affectedRows === 0) {
+      return res.status(404).json({ error: 'kpiId not found' });
+    }
+
+    res.status(200).json({ success: true, message: 'New Target set successfully', alert_type: 'success' });
+  });
+});
+
+
+// fetch KPI Data by particular ID
+
+app.get('/fetch_kpiDetailsby_Id', (req, res) => {
+  const kpiDetailsId = parseInt(req.query.kpiDetailsId, 10);
+  if (isNaN(kpiDetailsId)) {
+    return res.status(400).json({ error: 'Missing or invalid required parameters' });
+  }
+
+  let query = 'SELECT id as kpiDetailsId, company_id, financial_year,emp_code,staffid,kpi_id,review_month,target FROM hrms_prm_kpi_target_achievement WHERE id = ?';
+
+  connection.query(query, kpiDetailsId, (err, results) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'No data found for the provided IDs' });
+    }
+    if (results) {
+      res.status(200).json(results);
+    } else {
+      res.status(404).json({ error: 'No data found for the provided IDs' });
+    }
+  });
+});
+
+
+app.post('/insert_kpi_targetHistory', async (req, res) => {
+  const { company_id, page, candidate_staff_id, key_title, details, created_by } = req.body;
+
+  try {
+    let query = `INSERT INTO hrms_activity_log_details (company_id, page, candidate_staff_id, key_title, details, created_by)
+      VALUES (?, ?, ?, ?, ?, ?)`;
+
+    await new Promise((resolve, reject) => {
+      connection.query(query, [company_id, page, candidate_staff_id, key_title, JSON.stringify(details), created_by], (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      }
+      );
+    });
+
+    res.status(200).json({ success: true, message: 'Goals and KPI targets added successfully.', alert_type: 'success' });
+  } catch (queryError) {
+    console.error('Error during KPI target history insertion:', queryError);
+    res.status(500).send('Error inserting KPI target history.');
+  }
 });
 
 app.listen(5000)
